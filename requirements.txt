@@ -1,0 +1,17 @@
+opencv-python
+numpy
+scipy
+sounddevice
+librosa
+SpeechRecognition
+transformers
+torch
+torchvision
+torchaudio
+streamlit
+matplotlib
+pandas
+Pillow
+pymongo
+flask
+flask-cors
