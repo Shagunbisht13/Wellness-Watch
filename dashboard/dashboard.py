@@ -1,9 +1,19 @@
 """
-Module 13: Dashboard Module (Streamlit + Flask + Matplotlib)
+Module 13 — Dashboard Module
+============================
+Purpose:
+    Visualize live emotion state, alert logs, and proof history.
+
+Technologies:
+    Streamlit + Matplotlib (primary UI).
+    Flask API in ``dashboard/api.py`` serves the React frontend.
+
 Displays:
- - Live emotion
- - Alert logs
- - Proof history
+    Live emotion state, alert logs, proof history, incident distribution.
+
+Run:
+    streamlit run dashboard/dashboard.py
+    python dashboard/api.py
 """
 
 import streamlit as st
@@ -12,27 +22,23 @@ import matplotlib.pyplot as plt
 import sys
 import os
 import time
-from datetime import datetime
 
-# Add project root to sys.path to import database_helper
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from database.database_helper import fetch_recent, fetch_stats
+from modules.database_module import fetch_recent, fetch_stats
+from modules.alert import get_alert_log
 
 st.set_page_config(
     page_title="Harassment Detection Dashboard",
     page_icon="🛡️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-# Custom CSS for the dashboard
-st.markdown("""
+st.markdown(
+    """
 <style>
-    .reportview-container {
-        background: #0f1115;
-    }
     .metric-card {
         background-color: #1e212b;
         border-radius: 10px;
@@ -48,14 +54,10 @@ st.markdown("""
         text-transform: uppercase;
         margin-bottom: 5px;
     }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
-    }
+    .metric-value { font-size: 24px; font-weight: bold; }
     .harassment { color: #ff4b4b; }
     .stress { color: #ffa421; }
     .normal { color: #2eeb7a; }
-    
     .alert-box {
         padding: 20px;
         border-radius: 10px;
@@ -64,10 +66,6 @@ st.markdown("""
         color: #ff4b4b;
         text-align: center;
         margin-bottom: 20px;
-        animation: blink 2s linear infinite;
-    }
-    @keyframes blink {
-        50% { opacity: 0.5; }
     }
     .section-header {
         font-size: 22px;
@@ -79,107 +77,139 @@ st.markdown("""
         color: #ffffff;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.title("🛡️ Harassment Detection Dashboard")
-st.markdown("Visualizing real-time multimodal data and proof evidence.")
+st.title("Harassment Detection Dashboard")
+st.markdown("Module 13 — live emotion state, alert logs, and proof history.")
 
-# Auto-refresh mechanism
 placeholder = st.empty()
+
 
 def render_dashboard():
     with placeholder.container():
-        # Fetch data from MongoDB
         records = fetch_recent(100)
         stats = fetch_stats()
-        
         latest = records[0] if records else None
-        
-        # ── 1. LIVE EMOTION MODULE ─────────────────────────────────────────────
-        st.markdown('<div class="section-header">📡 Live Emotion Status</div>', unsafe_allow_html=True)
-        
+
+        st.markdown(
+            '<div class="section-header">Live Emotion Status</div>',
+            unsafe_allow_html=True,
+        )
+
         if latest:
-            # Alert Module Trigger
             if latest["final_result"] == "harassment":
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div class="alert-box">
-                    <h2>🚨 HARASSMENT DETECTED 🚨</h2>
-                    <p>Immediate action required! Event recorded at {latest['timestamp']}</p>
+                    <h2>WARNING: Harassment detected</h2>
+                    <p>Event recorded at {latest['timestamp']}</p>
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
 
             col1, col2, col3, col4 = st.columns(4)
-            
+
             def get_color_class(val):
                 v = str(val).lower()
-                if "harassment" in v or "angry" in v or "abusive" in v: return "harassment"
-                if "stress" in v or "sad" in v: return "stress"
+                if "harassment" in v or "angry" in v or "abusive" in v:
+                    return "harassment"
+                if "stress" in v or "sad" in v:
+                    return "stress"
                 return "normal"
 
             with col1:
-                st.markdown(f"""
+                ts = str(latest["timestamp"]).split(" ")[-1]
+                st.markdown(
+                    f"""
                 <div class="metric-card">
                     <div class="metric-label">Last Updated</div>
-                    <div class="metric-value" style="color: #cbd5e1;">{latest['timestamp'].split(' ')[1]}</div>
-                </div>""", unsafe_allow_html=True)
-                
+                    <div class="metric-value" style="color: #cbd5e1;">{ts}</div>
+                </div>""",
+                    unsafe_allow_html=True,
+                )
+
             with col2:
-                c = get_color_class(latest['face_emotion'])
-                st.markdown(f"""
+                c = get_color_class(latest["face_emotion"])
+                st.markdown(
+                    f"""
                 <div class="metric-card">
                     <div class="metric-label">Face Emotion</div>
                     <div class="metric-value {c}">{latest['face_emotion'].upper()}</div>
-                </div>""", unsafe_allow_html=True)
+                </div>""",
+                    unsafe_allow_html=True,
+                )
 
             with col3:
-                c = get_color_class(latest['speech_emotion'])
-                st.markdown(f"""
+                c = get_color_class(latest["speech_emotion"])
+                st.markdown(
+                    f"""
                 <div class="metric-card">
                     <div class="metric-label">Voice Emotion</div>
                     <div class="metric-value {c}">{latest['speech_emotion'].upper()}</div>
-                </div>""", unsafe_allow_html=True)
+                </div>""",
+                    unsafe_allow_html=True,
+                )
 
             with col4:
-                c = get_color_class(latest['final_result'])
-                st.markdown(f"""
+                c = get_color_class(latest["final_result"])
+                st.markdown(
+                    f"""
                 <div class="metric-card" style="border-color: #4b5563;">
                     <div class="metric-label">Final Result</div>
                     <div class="metric-value {c}">{latest['final_result'].upper()}</div>
-                </div>""", unsafe_allow_html=True)
+                </div>""",
+                    unsafe_allow_html=True,
+                )
         else:
-            st.info("Waiting for data from capture module...")
+            st.info("Waiting for data from the capture pipeline...")
 
-        # ── 2. ALERT LOGS MODULE ─────────────────────────────────────────────
-        st.markdown('<div class="section-header">⚠️ Alert Logs Module</div>', unsafe_allow_html=True)
-        
-        if records:
-            # Filter only harassments or stress for alert logs
-            alerts = [r for r in records if r["final_result"] in ["harassment", "stress"]]
+        st.markdown(
+            '<div class="section-header">Alert Logs</div>',
+            unsafe_allow_html=True,
+        )
+        live_alerts = get_alert_log(20)
+        if live_alerts:
+            st.dataframe(pd.DataFrame(live_alerts), use_container_width=True, hide_index=True)
+        elif records:
+            alerts = [r for r in records if r["final_result"] in ("harassment", "stress")]
             if alerts:
-                df_alerts = pd.DataFrame(alerts)[["timestamp", "face_emotion", "speech_emotion", "text_prediction", "final_result"]]
-                # Apply color styling
-                def highlight_alerts(s):
-                    if s.final_result == 'harassment': return ['background-color: rgba(255, 75, 75, 0.2)'] * len(s)
-                    elif s.final_result == 'stress': return ['background-color: rgba(255, 164, 33, 0.2)'] * len(s)
-                    return [''] * len(s)
-                
-                st.dataframe(df_alerts.style.apply(highlight_alerts, axis=1), use_container_width=True, hide_index=True)
+                df_alerts = pd.DataFrame(alerts)[
+                    [
+                        "timestamp",
+                        "face_emotion",
+                        "speech_emotion",
+                        "text_prediction",
+                        "final_result",
+                    ]
+                ]
+                st.dataframe(df_alerts, use_container_width=True, hide_index=True)
             else:
                 st.success("No alerts generated yet. All systems normal.")
-        
-        # ── 3. PROOF HISTORY MODULE ──────────────────────────────────────────
-        st.markdown('<div class="section-header">📁 Proof History Module</div>', unsafe_allow_html=True)
-        
+        else:
+            st.info("No alert history yet.")
+
+        st.markdown(
+            '<div class="section-header">Proof History</div>',
+            unsafe_allow_html=True,
+        )
         if records:
-            # Only show records that actually have proof saved
             proofs = [r for r in records if r.get("proof_image") or r.get("proof_audio")]
             if proofs:
-                for p in proofs[:10]: # show latest 10 proofs
-                    with st.expander(f"Proof Evidence — {p['timestamp']} [{p['final_result'].upper()}]"):
+                for p in proofs[:10]:
+                    with st.expander(
+                        f"Proof Evidence — {p['timestamp']} [{p['final_result'].upper()}]"
+                    ):
                         pcol1, pcol2 = st.columns([1, 2])
                         with pcol1:
                             if p.get("proof_image") and os.path.exists(p["proof_image"]):
-                                st.image(p["proof_image"], caption=f"Face: {p['face_emotion']}", use_container_width=True)
+                                st.image(
+                                    p["proof_image"],
+                                    caption=f"Face: {p['face_emotion']}",
+                                    use_container_width=True,
+                                )
                             else:
                                 st.caption("No image proof available.")
                         with pcol2:
@@ -187,26 +217,36 @@ def render_dashboard():
                                 st.audio(p["proof_audio"], format="audio/wav")
                             else:
                                 st.caption("No audio proof available.")
-                            st.markdown(f"**Text Spoken:** {p['text_prediction']}")
+                            st.markdown(f"**Text class:** {p['text_prediction']}")
             else:
-                st.info("No proof evidence saved yet (Proof is only saved during harassment events).")
+                st.info("No proof evidence saved yet (only on harassment events).")
 
-        # ── 4. STATISTICS & MATPLOTLIB CHARTS ────────────────────────────────
-        st.markdown('<div class="section-header">📊 Matplotlib Analytics</div>', unsafe_allow_html=True)
-        
+        st.markdown(
+            '<div class="section-header">Incident Distribution</div>',
+            unsafe_allow_html=True,
+        )
         if stats:
             fig, ax = plt.subplots(figsize=(6, 4), facecolor="#0e1117")
             ax.set_facecolor("#0e1117")
-            
-            COLORS = {"harassment": "#ff4b4b", "stress": "#ffa421", "normal behaviour": "#2eeb7a"}
+            colors_map = {
+                "harassment": "#ff4b4b",
+                "stress": "#ffa421",
+                "normal behaviour": "#2eeb7a",
+            }
             labels = list(stats.keys())
             sizes = list(stats.values())
-            colors = [COLORS.get(l, "#6366f1") for l in labels]
-            
-            ax.pie(sizes, labels=labels, autopct="%1.1f%%", startangle=140, colors=colors, textprops={'color':"w"})
+            colors = [colors_map.get(l, "#6366f1") for l in labels]
+            ax.pie(
+                sizes,
+                labels=labels,
+                autopct="%1.1f%%",
+                startangle=140,
+                colors=colors,
+                textprops={"color": "w"},
+            )
             ax.set_title("Overall Incident Distribution", color="white", pad=20)
-            
             st.pyplot(fig, use_container_width=False)
+
 
 while True:
     render_dashboard()

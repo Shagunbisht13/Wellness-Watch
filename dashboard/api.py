@@ -1,8 +1,6 @@
 """
-Flask API Backend for Harassment Detection Dashboard
-- Serves data from MongoDB.
-- Serves proof media files.
-- Provides endpoints for the React frontend.
+Module 13 companion — Flask API for the React dashboard.
+Serves prediction history, stats, and proof media files.
 """
 
 import sys
@@ -10,11 +8,10 @@ import os
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
-# Ensure project root is on PYTHONPATH to import database_helper
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, ROOT)
 
-from database.database_helper import fetch_recent, fetch_stats
+from modules.database_module import fetch_recent, fetch_stats
 
 app = Flask(__name__)
 CORS(app) # Enable CORS for all routes so React app can fetch

@@ -1,7 +1,7 @@
 opencv-python
+sounddevice
 numpy
 scipy
-sounddevice
 librosa
 SpeechRecognition
 transformers
@@ -15,3 +15,5 @@ Pillow
 pymongo
 flask
 flask-cors
+plyer
+nltk

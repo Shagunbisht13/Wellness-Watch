@@ -1,19 +1,32 @@
 """
-Module 10: Proof Storage
-- Saves evidence (face image + audio clip) when harassment is detected.
-- Creates timestamped filenames for easy reference.
-- Directories: proof/images/ and proof/audio/
+Module 10 — Proof Storage Module
+================================
+Purpose:
+    Store evidence only when suspicious (harassment) behaviour is detected.
+
+Technologies:
+    Python file handling, os, OpenCV (image write), shutil (audio copy).
+
+Stores:
+    Face image, audio clip, timestamped filenames.
+
+Folder structure:
+    proof/images/  (e.g. image_101.jpg)
+    proof/audio/   (e.g. audio_101.wav)
+
+Output:
+    Dict with saved image_path and audio_path (or None).
 """
 
 import os
 import shutil
-import cv2
-import numpy as np
 from datetime import datetime
 
+import cv2
+import numpy as np
 
 PROOF_IMAGES_DIR = "proof/images"
-PROOF_AUDIO_DIR  = "proof/audio"
+PROOF_AUDIO_DIR = "proof/audio"
 
 
 def _ensure_dirs():
@@ -24,18 +37,12 @@ def _ensure_dirs():
 def save_proof(
     face_image: np.ndarray | None,
     audio_wav_path: str | None,
-    event_id: int | None = None
+    event_id: int | None = None,
 ) -> dict:
     """
     Save evidence of a harassment event.
 
-    Args:
-        face_image:     BGR face image numpy array (or None).
-        audio_wav_path: Path to the audio chunk WAV file (or None).
-        event_id:       Optional integer ID for the event.
-
-    Returns:
-        Dict with keys 'image_path' and 'audio_path' (None if not saved).
+    Returns dict with keys 'image_path' and 'audio_path'.
     """
     _ensure_dirs()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -44,8 +51,7 @@ def save_proof(
     saved_image = None
     saved_audio = None
 
-    # Save face image
-    if face_image is not None and face_image.size > 0:
+    if face_image is not None and getattr(face_image, "size", 0) > 0:
         img_path = os.path.join(PROOF_IMAGES_DIR, f"image_{tag}.jpg")
         try:
             cv2.imwrite(img_path, face_image)
@@ -54,7 +60,6 @@ def save_proof(
         except Exception as e:
             print(f"[ProofStorage] Failed to save image: {e}")
 
-    # Copy audio file
     if audio_wav_path and os.path.isfile(audio_wav_path):
         audio_path = os.path.join(PROOF_AUDIO_DIR, f"audio_{tag}.wav")
         try:

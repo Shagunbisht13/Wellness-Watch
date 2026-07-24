@@ -1,176 +1,229 @@
 """
-Harassment Detection System — Main Orchestrator (app.py)
-=========================================================
-Modules integrated:
-  Module 1  — Device Input (camera + microphone)
-  Module 2  — Real-Time Stream (threading)
-  Module 3  — Video Processing (Haar Cascade face crop)
-  Module 4  — Audio Processing (recording)
-  Module 5  — Preprocessing (handled inside each model)
-  Module 6  — Speech to Text
-  Module 7  — Feature Extraction (handled inside each model)
-  Module 8  — Model Inference (face emotion, voice emotion, text classifier)
-  Module 9  — Decision Engine (multimodal fusion)
-  Module 10 — Proof Storage (save image + audio on harassment)
-  Module 11 — Database Logging (SQLite)
+Harassment Detection System — Main Orchestrator (app.py / main entry)
+=====================================================================
+End-to-end workflow (exact pipeline order):
+
+  1.  Webcam captures live video          (Module 1 — Device Input)
+  2.  OpenCV extracts frame               (Module 2 — Real-Time Stream)
+  3.  Haar Cascade detects face           (Module 3 — Video Processing)
+  4.  Face image preprocessed             (Module 5 — Preprocessing)
+  5.  Microphone records speech (parallel)(Modules 1–2 + 4 — Audio Processing)
+  6.  Speech converted to text            (Module 6 — Speech-to-Text)
+  7.  BERT analyzes sentence meaning      (Modules 7–8 — Features + Text BERT)
+  8.  CNN/ViT detects facial emotion      (Module 8 — Face Emotion)
+  9.  Audio model detects voice tone      (Module 8 — Speech Emotion)
+ 10. Decision module combines results     (Module 9 — Multimodal Decision)
+ 11. If harassment → store proof          (Module 10 — Proof Storage)
+ 12. Result saved to database             (Module 11 — Database)
+ 13. Alert shown on dashboard             (Modules 12–13 — Alert + Dashboard)
 
 Run:
     python app.py
+    streamlit run dashboard/dashboard.py
 """
 
+from __future__ import annotations
+
 import os
-import time
-import threading
 import signal
 import sys
+import threading
+import time
 
-# ── Ensure project root is on PYTHONPATH ──────────────────────────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 
-# ── Module Imports ────────────────────────────────────────────────────────────
-from modules.camera          import VideoStream, detect_and_crop_face
-from modules.audio_record    import AudioRecorder
-from modules.speech_to_text  import transcribe_audio
-from modules.face_emotion    import predict_face_emotion
-from modules.voice_emotion   import predict_voice_emotion
-from modules.text_classifier import classify_text
-from modules.decision_engine import make_decision
-from modules.proof_storage   import save_proof
-from database.database_helper import initialize_db, insert_record
+# ── Modules 1–13 ──────────────────────────────────────────────────────────────
+from modules.realtime_stream import StreamManager                    # 1+2
+from modules.video_processing import detect_and_crop_face           # 3
+from modules.audio_processing import process_audio_chunk            # 4
+from modules.preprocessing import preprocess_face, preprocess_text  # 5
+from modules.speech_to_text import transcribe_audio                 # 6
+from modules.feature_extraction import (                            # 7
+    extract_audio_features,
+    extract_image_features,
+    extract_text_features,
+)
+from modules.pretrained_models import (                             # 8
+    classify_text,
+    predict_face_emotion,
+    predict_speech_emotion,
+)
+from modules.multimodal_decision import make_decision               # 9
+from modules.proof_storage import save_proof                        # 10
+from modules.database_module import initialize_db, insert_record    # 11
+from modules.alert import trigger_alert                             # 12
+# Module 13 — dashboard runs separately: streamlit run dashboard/dashboard.py
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-AUDIO_CHUNK_SECONDS   = 4       # Duration of each audio recording chunk
-AUDIO_TEMP_PATH       = "temp/audio/live_chunk.wav"
-FACE_PROCESS_INTERVAL = 2.0     # Seconds between face emotion evaluations
-VIDEO_DISPLAY         = True    # Show OpenCV preview window
+AUDIO_CHUNK_SECONDS = 4.0
+AUDIO_TEMP_PATH = os.path.join("Temp", "audio", "live_chunk.wav")
+SAMPLE_RATE = 16000
+FRAME_CAPTURE_FPS = 18
+VIDEO_DISPLAY = True
 
-os.makedirs("temp/audio", exist_ok=True)
-os.makedirs("proof/images", exist_ok=True)
-os.makedirs("proof/audio", exist_ok=True)
+os.makedirs(os.path.join("Temp", "audio"), exist_ok=True)
+os.makedirs(os.path.join("proof", "images"), exist_ok=True)
+os.makedirs(os.path.join("proof", "audio"), exist_ok=True)
 
 
-# ── Shared state (thread-safe via locks) ──────────────────────────────────────
 class SharedState:
     def __init__(self):
-        self.lock             = threading.Lock()
-        self.face_emotion     = "—"
-        self.voice_emotion    = "—"
-        self.text_prediction  = "—"
+        self.lock = threading.Lock()
+        self.face_emotion = "—"
+        self.voice_emotion = "—"
+        self.text_prediction = "—"
         self.transcribed_text = ""
-        self.final_result     = "—"
-        self.last_face_image  = None
-        self.running          = True
-        self.event_count      = 0
+        self.final_result = "—"
+        self.last_face_image = None
+        self.running = True
+        self.event_count = 0
 
 
 state = SharedState()
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Thread 1: Video capture + face emotion
-# ──────────────────────────────────────────────────────────────────────────────
-def video_thread(stream: VideoStream):
-    print("[VideoThread] Started.")
-    last_process_time = 0
-
+def video_pipeline(stream: StreamManager):
+    """
+    Workflow steps 1–4 + 8 (face branch):
+      frame → Haar face crop → preprocess → face emotion
+    """
+    print("[VideoPipeline] Started.")
     while state.running:
+        # Steps 1–2: live frame from stream queue (~1 FPS processed)
         frame = stream.get_frame()
         if frame is None:
             time.sleep(0.05)
             continue
 
-        now = time.time()
+        # Step 3: Haar Cascade face detection + crop
+        face, rect = detect_and_crop_face(frame)
 
-        # Show preview (optional)
         if VIDEO_DISPLAY:
             import cv2
             preview = frame.copy()
-            face, rect = detect_and_crop_face(preview)
             if rect:
                 x, y, w, h = rect
-                import cv2
                 cv2.rectangle(preview, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 with state.lock:
                     result = state.final_result
-                color = (0, 0, 255) if result == "harassment" else \
-                        (0, 165, 255) if result == "stress" else (0, 255, 0)
-                cv2.putText(preview, result, (x, y - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                color = (
+                    (0, 0, 255)
+                    if result == "harassment"
+                    else (0, 165, 255)
+                    if result == "stress"
+                    else (0, 255, 0)
+                )
+                cv2.putText(
+                    preview,
+                    result,
+                    (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    color,
+                    2,
+                )
             cv2.imshow("Harassment Detection System", preview)
             cv2.waitKey(1)
 
-        # Run face emotion every FACE_PROCESS_INTERVAL seconds
-        if now - last_process_time >= FACE_PROCESS_INTERVAL:
-            face, _ = detect_and_crop_face(frame)
-            if face is not None:
-                emotion = predict_face_emotion(face)
-                with state.lock:
-                    state.face_emotion    = emotion
-                    state.last_face_image = face.copy()
-            last_process_time = now
+        if face is None:
+            continue
 
-    print("[VideoThread] Stopped.")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Thread 2: Audio capture + STT + text classification + voice emotion
-# ──────────────────────────────────────────────────────────────────────────────
-def audio_thread(recorder: AudioRecorder):
-    print("[AudioThread] Started.")
-
-    while state.running:
-        # Record a chunk
-        recorder.record_fixed(AUDIO_CHUNK_SECONDS, AUDIO_TEMP_PATH)
-
-        # Parallel analysis: voice emotion + STT
-        voice_result = predict_voice_emotion(AUDIO_TEMP_PATH)
-        text         = transcribe_audio(AUDIO_TEMP_PATH)
-        text_result  = classify_text(text) if text else "normal"
+        # Step 4: face preprocessing (also used inside Module 8)
+        _ = preprocess_face(face, size=(224, 224))
+        # Step 7 (image features) + Step 8 (face emotion CNN/ViT)
+        _ = extract_image_features(face)
+        emotion = predict_face_emotion(face)
 
         with state.lock:
-            state.voice_emotion    = voice_result
-            state.transcribed_text = text
-            state.text_prediction  = text_result
+            state.face_emotion = emotion
+            state.last_face_image = face.copy()
 
-        # Trigger decision whenever we have fresh audio data
+    print("[VideoPipeline] Stopped.")
+
+
+def audio_pipeline(stream: StreamManager):
+    """
+    Workflow steps 5–7 + 9–13 (audio/text branch + fusion):
+      chunk → process → STT → BERT text → speech emotion → decision → proof/DB/alert
+    """
+    print("[AudioPipeline] Started.")
+    while state.running:
+        # Step 5: microphone chunk (parallel with video)
+        chunk = stream.get_audio_chunk()
+        if chunk is None:
+            time.sleep(0.05)
+            continue
+
+        # Step: Module 4 audio processing → clean WAV
+        process_audio_chunk(
+            chunk,
+            sample_rate=stream.sample_rate,
+            output_path=AUDIO_TEMP_PATH,
+        )
+
+        # Step 9 path: speech emotion from cleaned audio
+        voice_result = predict_speech_emotion(AUDIO_TEMP_PATH)
+        _ = extract_audio_features(AUDIO_TEMP_PATH)
+
+        # Step 6: speech → text
+        text = transcribe_audio(AUDIO_TEMP_PATH)
+        clean_text = preprocess_text(text) if text else ""
+
+        # Steps 7–8: BERT features + BERT harassment classifier
+        if clean_text:
+            _ = extract_text_features(clean_text)
+        text_result = classify_text(text) if text else "normal"
+
+        with state.lock:
+            state.voice_emotion = voice_result
+            state.transcribed_text = text
+            state.text_prediction = text_result
+
+        # Steps 10–13
         fusion_step()
 
-    print("[AudioThread] Stopped.")
+    print("[AudioPipeline] Stopped.")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Decision + logging step (called after each audio chunk)
-# ──────────────────────────────────────────────────────────────────────────────
 def fusion_step():
+    """Steps 10–13: decision → proof → database → alert."""
     with state.lock:
-        face_e  = state.face_emotion
+        face_e = state.face_emotion
         voice_e = state.voice_emotion
-        text_p  = state.text_prediction
+        text_p = state.text_prediction
         face_img = state.last_face_image
         state.event_count += 1
         event_id = state.event_count
 
+    # Step 10: multimodal decision
     decision = make_decision(face_e, voice_e, text_p)
 
-    proof_img   = None
+    proof_img = None
     proof_audio = None
 
+    # Step 11: store proof only on harassment
     if decision == "harassment":
         proof = save_proof(face_img, AUDIO_TEMP_PATH, event_id)
-        proof_img   = proof["image_path"]
+        proof_img = proof["image_path"]
         proof_audio = proof["audio_path"]
-        print(f"\n{'!'*60}")
-        print(f"  ⚠ HARASSMENT DETECTED — Event #{event_id}")
-        print(f"{'!'*60}\n")
 
-    # Log to database
+    # Step 12: database history
     insert_record(
-        face_emotion    = face_e,
-        speech_emotion  = voice_e,
-        text_prediction = text_p,
-        final_result    = decision,
-        proof_image     = proof_img,
-        proof_audio     = proof_audio,
+        face_emotion=face_e,
+        speech_emotion=voice_e,
+        text_prediction=text_p,
+        final_result=decision,
+        proof_image=proof_img,
+        proof_audio=proof_audio,
+    )
+
+    # Step 13: alert (dashboard reads DB + alert log)
+    trigger_alert(
+        final_result=decision,
+        face_emotion=face_e,
+        voice_emotion=voice_e,
+        text_prediction=text_p,
+        event_id=event_id,
     )
 
     with state.lock:
@@ -182,43 +235,34 @@ def fusion_step():
     )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Graceful shutdown
-# ──────────────────────────────────────────────────────────────────────────────
 def shutdown(sig=None, frame=None):
     print("\n[Main] Shutdown signal received. Stopping...")
     state.running = False
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Main entry point
-# ──────────────────────────────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print("  Harassment Detection System — Starting")
+    print("  Harassment Detection System — 13-Module Pipeline")
     print("=" * 60)
 
-    # Initialize database
     initialize_db()
-
-    # Register CTRL+C handler
     signal.signal(signal.SIGINT, shutdown)
 
-    # Initialize hardware
-    stream   = VideoStream()
-    recorder = AudioRecorder()
-
+    # Modules 1 + 2: device input + real-time stream threads
+    stream = StreamManager(
+        frame_fps=FRAME_CAPTURE_FPS,
+        audio_chunk_duration=AUDIO_CHUNK_SECONDS,
+        sample_rate=SAMPLE_RATE,
+    )
     stream.start()
 
-    # Start threads
-    t_video = threading.Thread(target=video_thread, args=(stream,), daemon=True)
-    t_audio = threading.Thread(target=audio_thread, args=(recorder,), daemon=True)
-
+    t_video = threading.Thread(target=video_pipeline, args=(stream,), daemon=True)
+    t_audio = threading.Thread(target=audio_pipeline, args=(stream,), daemon=True)
     t_video.start()
     t_audio.start()
 
     print("[Main] System running. Press Ctrl+C to stop.")
-    print("[Main] Open dashboard:  streamlit run dashboard/dashboard.py\n")
+    print("[Main] Dashboard (Module 13): streamlit run dashboard/dashboard.py\n")
 
     try:
         while state.running:
@@ -226,10 +270,12 @@ def main():
     except KeyboardInterrupt:
         shutdown()
 
-    # Cleanup
     stream.stop()
-    import cv2
-    cv2.destroyAllWindows()
+    try:
+        import cv2
+        cv2.destroyAllWindows()
+    except Exception:
+        pass
     print("[Main] System shut down cleanly.")
 
 

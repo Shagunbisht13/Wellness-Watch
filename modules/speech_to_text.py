@@ -1,32 +1,72 @@
 """
-Module 6: Speech-to-Text
-- Transcribes a WAV audio file into text using Google Speech Recognition API.
-- Wraps SpeechRecognition library for easy integration.
-- Falls back gracefully on recognition errors (network issues, unclear speech, etc).
+Module 6 — Speech-to-Text Module
+================================
+Purpose:
+    Convert an audio chunk into a text sentence for harassment analysis.
+
+Technologies:
+    SpeechRecognition (Google Web Speech API). Whisper or wav2vec can be
+    swapped in later behind the same ``transcribe_audio`` interface.
+
+Flow:
+    audio chunk / WAV → speech model → text output
+
+Output:
+    Text sentence (empty string on failure / unclear speech).
 """
 
-import speech_recognition as sr
+from __future__ import annotations
+
+import os
+from typing import Optional, Union
+
+import numpy as np
+
+from modules.audio_processing import save_waveform
+
+AudioInput = Union[str, np.ndarray]
 
 
-def transcribe_audio(wav_path: str, language: str = "en-IN") -> str:
+def transcribe_audio(
+    audio: AudioInput,
+    language: str = "en-IN",
+    sample_rate: int = 16000,
+    temp_path: str = "Temp/audio/stt_chunk.wav",
+) -> str:
     """
-    Transcribe a WAV audio file to text.
+    Transcribe a WAV path or float/int waveform to text.
 
-    Args:
-        wav_path: Absolute or relative path to the WAV file.
-        language: BCP-47 language code for recognition. Defaults to 'en-IN'.
-
-    Returns:
-        Transcribed text string. Empty string if recognition fails or audio is unclear.
+    Returns an empty string if recognition fails.
     """
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        print("[STT] SpeechRecognition not installed.")
+        return ""
+
+    wav_path: Optional[str] = None
+    cleanup = False
+
+    if isinstance(audio, str):
+        wav_path = audio
+    else:
+        os.makedirs(os.path.dirname(os.path.abspath(temp_path)) or ".", exist_ok=True)
+        y = np.asarray(audio, dtype=np.float32)
+        if y.ndim > 1:
+            y = y.mean(axis=1)
+        if np.max(np.abs(y)) > 1.5:
+            y = y / (np.max(np.abs(y)) + 1e-8)
+        save_waveform(y, temp_path, sample_rate=sample_rate)
+        wav_path = temp_path
+        cleanup = False  # keep for debugging / proof pipeline
+
     recognizer = sr.Recognizer()
     try:
         with sr.AudioFile(wav_path) as source:
-            # Adjust for ambient noise in first 0.5 seconds of the clip
             recognizer.adjust_for_ambient_noise(source, duration=0.5)
-            audio = recognizer.record(source)
+            recorded = recognizer.record(source)
 
-        text = recognizer.recognize_google(audio, language=language)
+        text = recognizer.recognize_google(recorded, language=language)
         print(f"[STT] Transcribed: {text!r}")
         return text
 
@@ -42,10 +82,15 @@ def transcribe_audio(wav_path: str, language: str = "en-IN") -> str:
     except Exception as e:
         print(f"[STT] Unexpected error: {e}")
         return ""
+    finally:
+        if cleanup and wav_path and os.path.isfile(wav_path):
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else "temp/audio/test.wav"
-    result = transcribe_audio(path)
-    print(f"Recognized Text: {result}")
+    path = sys.argv[1] if len(sys.argv) > 1 else "Temp/audio/test.wav"
+    print(f"Recognized Text: {transcribe_audio(path)}")

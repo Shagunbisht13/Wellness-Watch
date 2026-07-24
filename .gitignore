@@ -1,0 +1,20 @@
+# Secrets / local tooling
+.cursor/mcp.json
+.env
+.env.*
+
+# Runtime / evidence
+Temp/
+temp/
+proof/images/
+proof/audio/
+database/test_history.db
+**/__pycache__/
+*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/stitch/node_modules/
+frontend/stitch/package-lock.json
+frontend/stitch/package.json
