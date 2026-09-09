@@ -122,8 +122,8 @@ def video_pipeline(stream: StreamManager):
                     color,
                     2,
                 )
-            cv2.imshow("Harassment Detection System", preview)
-            cv2.waitKey(1)
+            # cv2.imshow("Harassment Detection System", preview)
+            # cv2.waitKey(1)
 
         if face is None:
             continue
