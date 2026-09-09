@@ -231,7 +231,7 @@ def fusion_step():
 
     print(
         f"[Event #{event_id}] "
-        f"Face={face_e} | Voice={voice_e} | Text={text_p} | ► {decision}"
+        f"Face={face_e} | Voice={voice_e} | Text={text_p} | -> {decision}"
     )
 
 
