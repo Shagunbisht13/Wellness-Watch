@@ -39,6 +39,7 @@ HarassmentDetectionSystem/
 │   ├─ realtime_stream.py       # Stream manager (video & audio queues)
 │   ├─ video_processing.py      # Face detection & cropping
 │   ├─ audio_processing.py      # Audio cleaning & feature extraction
+│   ├─ audio_record.py          # Legacy backward-compatible audio recorder shim
 │   ├─ preprocessing.py         # Face & text preprocessing utilities
 │   ├─ speech_to_text.py        # STT using SpeechRecognition
 │   ├─ feature_extraction.py    # Audio, image, text feature extractors
