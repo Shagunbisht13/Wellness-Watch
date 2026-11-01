@@ -1,20 +1,40 @@
-# Secrets / local tooling
+﻿# Secrets & local tooling
+.cursor/
 .cursor/mcp.json
 .env
 .env.*
 
-# Runtime / evidence
+# Runtime logs & test outputs
+out.txt
+*.log
+
+# Runtime evidence & temporary audio/video buffers
 Temp/
 temp/
 proof/images/
 proof/audio/
 database/test_history.db
-**/__pycache__/
-*.pyc
 
-# Frontend
+# Python bytecode & cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Frontend builds
 frontend/node_modules/
 frontend/dist/
 frontend/stitch/node_modules/
 frontend/stitch/package-lock.json
 frontend/stitch/package.json
+
+# OS & Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

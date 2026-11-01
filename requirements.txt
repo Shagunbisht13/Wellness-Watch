@@ -1,19 +1,26 @@
-opencv-python
-sounddevice
-numpy
-scipy
-librosa
-SpeechRecognition
-transformers
-torch
-torchvision
-torchaudio
-streamlit
-matplotlib
-pandas
-Pillow
-pymongo
-flask
-flask-cors
-plyer
-nltk
+﻿# Core Computer Vision & Audio
+opencv-python>=4.8.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.10.0
+librosa>=0.10.0
+SpeechRecognition>=3.10.0
+
+# Deep Learning & NLP
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+transformers>=4.35.0
+nltk>=3.8.1
+
+# Web Dashboard & Alert API
+streamlit>=1.28.0
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# Database & System Utilities
+pymongo>=4.5.0
+matplotlib>=3.7.0
+pandas>=2.0.0
+Pillow>=10.0.0
+plyer>=2.1.0
